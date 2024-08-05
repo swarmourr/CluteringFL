@@ -2,7 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from .Distances import DistanceMetric
 
-
 class KMeans:
     def __init__(self, n_clusters=2, max_iter=100, tol=1e-4, distance_metric=DistanceMetric.EUCLIDEAN, p=3):
         """
@@ -159,3 +158,31 @@ class KMeans:
         plt.legend()
         plt.grid(True)
         plt.show()
+
+    def _get_centroids(self, labels, data, n_clusters):
+        """
+        Calculates the centroids for the clusters.
+
+        Parameters:
+        - labels (np.ndarray): The cluster labels for each data point.
+        - data (pd.DataFrame): The input data.
+
+        Returns:
+        - centroids (np.ndarray): The centroids of the clusters.
+        """
+        centroids = np.zeros((n_clusters, data.shape[1]))
+        for k in range(n_clusters):
+            centroids[k] = data[labels == k].mean(axis=0)
+        return centroids
+
+    def get_cluster_info(self):
+        """
+        Returns the labels and centroids of the optimal clustering.
+
+        Returns:
+        - labels (np.ndarray): Cluster labels of the data.
+        - centroids (np.ndarray): Centroids of the clusters.
+        """
+        if self._labels is None or self._centroids is None:
+            raise ValueError("Clusters have not been computed. Call 'find_optimal_clusters' first.")
+        return self._labels, self._centroids
