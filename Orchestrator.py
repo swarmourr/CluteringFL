@@ -1,3 +1,4 @@
+import json
 import pandas as pd
 from sklearn.metrics import silhouette_score
 from sklearn.datasets import make_blobs
@@ -20,7 +21,6 @@ class Orchestrator:
         self._optimal_clusters = None
         self._centroids = None
         self._labels = None
-        self.original_labels = None  # Store original labels for data points
 
     @property
     def optimal_clusters(self):
@@ -64,17 +64,15 @@ class Orchestrator:
         # Return the cluster labels
         return labels
 
-    def find_optimal_clusters(self, data: pd.DataFrame, original_labels=None):
+    def find_optimal_clusters(self, data: pd.DataFrame):
         """
         This method is responsible for finding the optimal number of clusters in the data.
 
         Parameters:
         - data (pd.DataFrame): The input data for which to find the optimal number of clusters.
-        - original_labels (list or pd.Series): Original labels for each data point (e.g., client IDs).
         """
         max_score = -1
         optimal_clusters = 2
-        self.original_labels = original_labels  # Store original labels
 
         for i in range(2, self.max_clusters + 1):
             # Cluster data and get labels
@@ -107,9 +105,12 @@ class Orchestrator:
             raise ValueError("Clusters have not been computed. Call 'find_optimal_clusters' first.")
         return self._labels, self._centroids
 
-    def get_cluster_mapping(self):
+    def get_cluster_mapping(self, original_labels):
         """
         Creates a mapping of cluster IDs to the original labels of data points assigned to each cluster.
+
+        Parameters:
+        - original_labels (list): The list of original labels (e.g., client names or IDs) for each data point.
 
         Returns:
         - cluster_mapping (dict): A dictionary mapping each cluster ID to a list of original labels.
@@ -119,12 +120,28 @@ class Orchestrator:
         
         cluster_mapping = {}
         for idx, label in enumerate(self._labels):
-            if label not in cluster_mapping:
-                cluster_mapping[label] = []
-            original_label = self.original_labels[idx] if self.original_labels is not None else idx
-            cluster_mapping[label].append(original_label)
+            # Convert the cluster ID to a standard Python integer
+            cluster_id = int(label)
+            if cluster_id not in cluster_mapping:
+                cluster_mapping[cluster_id] = []
+            cluster_mapping[cluster_id].append(original_labels[idx])
         
         return cluster_mapping
+
+    def export_cluster_mapping_to_json(self, cluster_mapping, filename="cluster_mapping.json"):
+        """
+        Exports the cluster mapping to a JSON file.
+
+        Parameters:
+        - cluster_mapping (dict): The cluster mapping dictionary.
+        - filename (str): The name of the file to save the JSON output. Default is 'cluster_mapping.json'.
+        """
+        # Convert keys to strings to ensure compatibility with JSON
+        json_compatible_mapping = {str(k): v for k, v in cluster_mapping.items()}
+        
+        with open(filename, 'w') as f:
+            json.dump(json_compatible_mapping, f, indent=4)
+        print(f"Cluster mapping exported to {filename}")
 
 
 # Generate some sample data
@@ -133,27 +150,27 @@ data, _ = make_blobs(n_samples=300, centers=5, cluster_std=1.0, random_state=42)
 # Convert to DataFrame for processing
 data = pd.DataFrame(data)
 
-# Add a column of original labels (e.g., client IDs)
-original_labels = [f"Client_{i+1}" for i in range(data.shape[0])]
-data['ClientID'] = original_labels
+# Create sample client IDs as labels
+client_ids = [f"Client {i+1}" for i in range(data.shape[0])]
 
-
-print(data)
-# Optionally standardize the data (excluding ClientID column)
+# Optionally standardize the data
 scaler = StandardScaler()
-data_scaled = scaler.fit_transform(data.drop(columns=['ClientID']))
+data_scaled = scaler.fit_transform(data)
 
 # Initialize the Orchestrator
 orchestrator = Orchestrator(max_clusters=10)
 
-# Find the optimal clusters with original labels
-orchestrator.find_optimal_clusters(data_scaled, original_labels=original_labels)
+# Find the optimal clusters
+orchestrator.find_optimal_clusters(data_scaled)
 
 # Get cluster information
 labels, centroids = orchestrator.get_cluster_info()
 print("Labels of the optimal clustering:", labels)
 print("Centroids of the optimal clustering:\n", centroids)
 
-# Get the mapping between cluster IDs and original labels
-cluster_mapping = orchestrator.get_cluster_mapping()
-print("Cluster to Original Label Mapping:", cluster_mapping)
+# Get the mapping between cluster IDs and client IDs
+cluster_mapping = orchestrator.get_cluster_mapping(client_ids)
+print("Cluster to Client Mapping:", cluster_mapping)
+
+# Export the mapping to a JSON file
+orchestrator.export_cluster_mapping_to_json(cluster_mapping, filename="cluster_mapping.json")
