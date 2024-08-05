@@ -3,6 +3,9 @@ import tensorflow as tf
 from flwr_datasets import FederatedDataset
 from flwr_datasets.partitioner import IidPartitioner, DirichletPartitioner, DistributionPartitioner, ExponentialPartitioner, InnerDirichletPartitioner, LinearPartitioner, NaturalIdPartitioner, PathologicalPartitioner, ShardPartitioner, SizePartitioner, SquarePartitioner
 from tqdm import tqdm
+import pandas as pd 
+
+fds= None 
 
 def load_data(data_name, n_partitioner, chosen_partitioner):
     # Download and partition dataset
@@ -34,3 +37,5 @@ def load_data(data_name, n_partitioner, chosen_partitioner):
         part.set_format("numpy")
         df = pd.DataFrame(part)
         df.to_csv(f"data/{data_name}/{n_partitioner}_partitions/{partition}.csv", index=False)
+
+load_data("mnist", 10, IidPartitioner(10))
