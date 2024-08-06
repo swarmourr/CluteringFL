@@ -8,7 +8,8 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose, Normalize, ToTensor
 from flwr_datasets import FederatedDataset
-from flwr_datasets.partitioner import IidPartitioner
+from flwr_datasets.partitioner import IidPartitioner, DirichletPartitioner, DistributionPartitioner, ExponentialPartitioner, InnerDirichletPartitioner, LinearPartitioner, NaturalIdPartitioner, PathologicalPartitioner, ShardPartitioner, SizePartitioner, SquarePartitioner
+
 
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -34,35 +35,36 @@ class Net(nn.Module):
         x = F.relu(self.fc2(x))
         return self.fc3(x)
 
-
-fds = None  # Cache FederatedDataset
-
+fds = None
 
 def load_data(partition_id: int, num_partitions: int):
-    """Load partition CIFAR10 data."""
+    """Load partition MNIST data."""
     # Only initialize `FederatedDataset` once
     global fds
     if fds is None:
-        partitioner = IidPartitioner(num_partitions=num_partitions)
         fds = FederatedDataset(
-            dataset="uoft-cs/cifar10",
-            partitioners={"train": partitioner},
+            dataset="mnist",
+            partitioners={"train": IidPartitioner(num_partitions),
+            },
+            trust_remote_code=True
         )
-    partition = fds.load_partition(partition_id)
-    # Divide data on each node: 80% train, 20% test
-    partition_train_test = partition.train_test_split(test_size=0.2, seed=42)
-    pytorch_transforms = Compose(
-        [ToTensor(), Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
-    )
-
+    
     def apply_transforms(batch):
         """Apply transforms to the partition from FederatedDataset."""
         batch["img"] = [pytorch_transforms(img) for img in batch["img"]]
         return batch
+    
+    partition = fds.load_partition(partition_id)
+    partition = partition.rename_column("image", "img")
+    # Divide data on each node: 80% train, 20% test
+    partition_train_test = partition.train_test_split(test_size=0.2, seed=42)
+    pytorch_transforms = Compose([ToTensor(), Normalize((0.1307,), (0.3081,))])
+    # pytorch_transforms = Compose([ToTensor(), Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # For CIFAR10
 
     partition_train_test = partition_train_test.with_transform(apply_transforms)
-    trainloader = DataLoader(partition_train_test["train"], batch_size=32, shuffle=True)
+    trainloader = DataLoader(partition_train_test["train"], batch_size=32)
     testloader = DataLoader(partition_train_test["test"], batch_size=32)
+
     return trainloader, testloader
 
 
