@@ -72,12 +72,23 @@ class KMeans:
             # Calculate the distance of each point to the nearest centroid
             distances = np.array([min(self._calculate_distance(x, c) for c in centroids) for x in data])
 
-            # Choose a new centroid with a probability proportional to the distance
-            probabilities = distances / distances.sum()
-            new_centroid_idx = np.random.choice(n_samples, p=probabilities)
+            # Ensure distances are non-negative
+            distances = np.maximum(distances, 0)
+
+            # Check if the sum of distances is zero
+            distance_sum = distances.sum()
+            if distance_sum == 0:
+                # If all distances are zero, randomly choose the next centroid
+                new_centroid_idx = np.random.choice(n_samples)
+            else:
+                # Choose a new centroid with a probability proportional to the distance
+                probabilities = distances / distance_sum
+                new_centroid_idx = np.random.choice(n_samples, p=probabilities)
+
             centroids.append(data[new_centroid_idx])
 
         return np.array(centroids)
+
 
     def fit(self, data):
         # Normalize data if using cosine similarity

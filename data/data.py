@@ -39,4 +39,4 @@ def load_data(data_name, n_partitioner, chosen_partitioner):
         df.to_csv(f"data/{data_name}/{n_partitioner}_partitions/{partition}.csv", index=False)
 
 
-load_data("mnist", 10, IidPartitioner(10))
+load_data("mnist", 10, IidPartitioner(num_partitions=10))

@@ -6,6 +6,152 @@ from sklearn.preprocessing import StandardScaler
 
 from Clustering.FLKmeans import KMeans
 from Clustering.Distances import DistanceMetric
+from Statistics.stats import DataFrameStatistics
+
+import glob
+
+import numpy as np
+import pandas as pd
+from sklearn.cluster import KMeans as km
+
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+from torchvision.transforms import Compose, Normalize, ToTensor
+from flwr_datasets import FederatedDataset
+from flwr_datasets.partitioner import IidPartitioner, DirichletPartitioner, DistributionPartitioner, ExponentialPartitioner, InnerDirichletPartitioner, LinearPartitioner, NaturalIdPartitioner, PathologicalPartitioner, ShardPartitioner, SizePartitioner, SquarePartitioner
+
+
+def flatten_image_dataframe(df):
+    def convert_string_to_array(s):
+        # Remove extra brackets and split by spaces
+        numbers = s.strip('[]').replace('[', '').replace(']', '').split()
+        # Convert to integers
+        return np.array([int(num) for num in numbers if num])
+
+    # Apply the conversion to the 'image' column
+    df['image'] = df['image'].apply(convert_string_to_array)
+
+    # Convert the series of arrays into a 2D numpy array
+    image_arrays = np.stack(df['image'].values)
+
+    # Create a new DataFrame with each pixel as a feature
+    pixel_df = pd.DataFrame(image_arrays, columns=[f'pixel_{i}' for i in range(image_arrays.shape[1])])
+
+    # Add the label column
+    pixel_df['label'] = df['label']
+
+    return pixel_df
+
+
+fds = None
+
+def load_data(num_partitions: int, partitioner):
+    """Load partition MNIST data."""
+    # Only initialize `FederatedDataset` once
+    global fds
+    if fds is None:
+        fds = FederatedDataset(
+            dataset="mnist",
+            partitioners={"train": partitioner,
+            },
+            trust_remote_code=True
+        )
+    
+    def apply_transforms(batch):
+        """Apply transforms to the partition from FederatedDataset."""
+        batch["img"] = [pytorch_transforms(img) for img in batch["img"]]
+        return batch
+    
+    trainloaders = []
+    testloaders = []
+
+    for partition_id in range(num_partitions):
+        partition = fds.load_partition(partition_id)
+        partition = partition.rename_column("image", "img")
+        # Divide data on each node: 80% train, 20% test
+        partition_train_test = partition.train_test_split(test_size=0.2, seed=42)
+        pytorch_transforms = Compose([ToTensor(), Normalize((0.1307,), (0.3081,))])
+        # pytorch_transforms = Compose([ToTensor(), Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]) # For CIFAR10
+
+        partition_train_test = partition_train_test.with_transform(apply_transforms)
+        trainloader = DataLoader(partition_train_test["train"], batch_size=32, shuffle=True)
+        testloader = DataLoader(partition_train_test["test"], batch_size=32)
+        testloaders.append(testloader)
+        trainloaders.append(trainloader)
+
+    return trainloaders, testloaders
+
+
+class Client:
+    def __init__(self, client_id, data_arrays=None, column_names=None):
+        """
+        Initializes the Client object.
+
+        Parameters:
+        - client_id: int or str, unique identifier for the client
+        - data_arrays: list of np.ndarray, list of NumPy arrays representing client data
+        """
+        self.client_id = client_id
+        # Initialize data_arrays as an empty list if not provided
+        self.data_arrays = data_arrays if data_arrays is not None else []
+        # Initialize data_arrays as an empty list if not provided
+        self.data_arrays = data_arrays if data_arrays is not None else []
+        self.column_names = column_names if column_names is not None else []
+
+    def add_array(self, new_array, column_names=None):
+        """
+        Adds a new NumPy array to the data_arrays list.
+
+        Parameters:
+        - new_array: np.ndarray, the NumPy array to be added
+        """
+        if not isinstance(new_array, np.ndarray):
+            raise ValueError("The new_array must be a NumPy ndarray.")
+        
+        self.data_arrays.append(new_array)
+
+    def _generate_default_column_names(self, num_columns):
+        """
+        Generates default column names.
+
+        Parameters:
+        - num_columns: int, number of columns needed
+        
+        Returns:
+        - list of str, default column names
+        """
+        return [f"col_{i+1}" for i in range(num_columns)]
+
+    def to_dataframe(self):
+        """
+        Transforms the list of NumPy arrays into a single pandas DataFrame.
+
+        Returns:
+        - df: pd.DataFrame, concatenated DataFrame of all NumPy arrays
+        """
+        # Check if the list is empty
+        if not self.data_arrays:
+            return pd.DataFrame()
+        
+        # Convert each NumPy array to a DataFrame
+        dfs = [pd.DataFrame(array) for array in self.data_arrays]
+        
+        # Concatenate all DataFrames along the columns
+        df = pd.concat(dfs, axis=1)
+        
+        # Set column names if provided, else use default names
+        if self.column_names:
+            df.columns = self.column_names[:df.shape[1]]  # Slice column_names to match the number of columns
+        else:
+            df.columns = self._generate_default_column_names(df.shape[1])
+        
+        return df
+
+    def __repr__(self):
+        return f"Client(client_id={self.client_id}, num_arrays={len(self.data_arrays)})"
 
 class Orchestrator:
     def __init__(self, distance_metric=DistanceMetric.EUCLIDEAN, max_clusters=10):
@@ -124,7 +270,7 @@ class Orchestrator:
             cluster_id = int(label)
             if cluster_id not in cluster_mapping:
                 cluster_mapping[cluster_id] = []
-            cluster_mapping[cluster_id].append(original_labels[idx])
+            cluster_mapping[int(cluster_id)].append(int(original_labels[idx]))
         
         return cluster_mapping
 
@@ -144,33 +290,91 @@ class Orchestrator:
         print(f"Cluster mapping exported to {filename}")
 
 
-# Generate some sample data
-data, _ = make_blobs(n_samples=300, centers=5, cluster_std=1.0, random_state=42)
+trains,tests=load_data(10, DirichletPartitioner(num_partitions=10, partition_by="label",alpha=0.5, min_partition_size=10,self_balancing=True))
 
-# Convert to DataFrame for processing
-data = pd.DataFrame(data)
+Client_list=list()
+client_idx=list()
+stats=pd.DataFrame()
+for idx,train in enumerate(trains):
+    print(idx)
+    client=Client(idx)
+    Client_list.append(client)
+    for batch in train:
+        for batch_one in batch['img']:
+           client.add_array(batch_one.numpy().flatten())
 
-# Create sample client IDs as labels
-client_ids = [f"Client {i+1}" for i in range(data.shape[0])]
+for client in Client_list:
+    print(client)
+    data = client.to_dataframe() 
+    df_stats = DataFrameStatistics(data)
+    all_stats=DataFrameStatistics(data).all_statistics()
+    single_row_df=df_stats.create_feature_stat_df(all_stats)
+    client_idx.append(client.client_id)
+    stats=pd.concat([stats, single_row_df])
 
+print(stats)
+print(client_idx)
+stats=(stats.notnull()).astype('int')
 # Optionally standardize the data
 scaler = StandardScaler()
-data_scaled = scaler.fit_transform(data)
+data_scaled = scaler.fit_transform(stats)
+
 
 # Initialize the Orchestrator
-orchestrator = Orchestrator(max_clusters=10)
-
+print("clustering")
+orchestrator = Orchestrator(max_clusters=9,distance_metric=DistanceMetric.EUCLIDEAN)
 # Find the optimal clusters
 orchestrator.find_optimal_clusters(data_scaled)
-
 # Get cluster information
 labels, centroids = orchestrator.get_cluster_info()
 print("Labels of the optimal clustering:", labels)
 print("Centroids of the optimal clustering:\n", centroids)
 
 # Get the mapping between cluster IDs and client IDs
-cluster_mapping = orchestrator.get_cluster_mapping(client_ids)
+cluster_mapping = orchestrator.get_cluster_mapping(client_idx)
 print("Cluster to Client Mapping:", cluster_mapping)
 
 # Export the mapping to a JSON file
 orchestrator.export_cluster_mapping_to_json(cluster_mapping, filename="cluster_mapping.json")
+
+
+"""
+
+files=glob.glob("data/data/mnist/10_partitions/*.csv")
+files_idx=list()
+stats=pd.DataFrame()
+
+for file in files:
+    print(file)
+    data = flatten_image_dataframe(pd.read_csv(file)) 
+    data=data.drop(columns=['label'])
+    df_stats = DataFrameStatistics(data)
+    all_stats=DataFrameStatistics(data).all_statistics()
+    single_row_df=df_stats.create_feature_stat_df(all_stats)
+    files_idx.append(file.split('/')[-1].split('.')[0])
+    stats=pd.concat([stats, single_row_df])
+
+print(stats)
+print(files_idx)
+
+# Optionally standardize the data
+scaler = StandardScaler()
+data_scaled = scaler.fit_transform(stats)
+
+
+# Initialize the Orchestrator
+print("clustering")
+orchestrator = Orchestrator(max_clusters=9,distance_metric=DistanceMetric.EUCLIDEAN)
+# Find the optimal clusters
+orchestrator.find_optimal_clusters(data_scaled)
+# Get cluster information
+labels, centroids = orchestrator.get_cluster_info()
+print("Labels of the optimal clustering:", labels)
+print("Centroids of the optimal clustering:\n", centroids)
+
+# Get the mapping between cluster IDs and client IDs
+cluster_mapping = orchestrator.get_cluster_mapping(files)
+print("Cluster to Client Mapping:", cluster_mapping)
+
+# Export the mapping to a JSON file
+orchestrator.export_cluster_mapping_to_json(cluster_mapping, filename="cluster_mapping.json")"""

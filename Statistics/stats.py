@@ -14,6 +14,8 @@ class DataFrameStatistics:
             raise ValueError("Input must be a pandas DataFrame.")
         
         self.data = data
+        self.clients_stats_data = pd.DataFrame()
+
 
     def compute_statistics(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -42,7 +44,6 @@ class DataFrameStatistics:
             'variance': df_numeric.var(),
             'skew': df_numeric.skew(),
             'kurtosis': df_numeric.kurtosis(),
-            'cv': df_numeric.std() / df_numeric.mean()  # Coefficient of Variation
         })
         
         return stats
@@ -89,7 +90,6 @@ class DataFrameStatistics:
             'variance': [stats['variance'].mean()],
             'skew': [stats['skew'].mean()],
             'kurtosis': [stats['kurtosis'].mean()],
-            'cv': [stats['cv'].mean()]
         }
         
         dataset_stats_df = pd.DataFrame(dataset_stats, index=['dataset'])
@@ -131,21 +131,7 @@ class DataFrameStatistics:
 
             
             return single_row_df
+    
+   
             
 
-# Example usage
-data = pd.DataFrame({
-    'A': [1, 2, 3, 4, 5, 5, 5, 7, 8, 9],
-    'B': [2, 3, 4, 5, 6, 7, 8, 9, 10, 10],
-    'C': [10, 9, 8, 7, 6, 5, 4, 3, 2, 1],
-    'D': [1, 2, 2, 3, 3, 3, 4, 4, 4, 5]
-})
-
-# Create an instance of DataFrameStatistics
-df_stats = DataFrameStatistics(data)
-
-# Get all statistics combined into one DataFrame
-all_stats = df_stats.all_statistics()
-
-
-df_stats.create_feature_stat_df(all_stats)
