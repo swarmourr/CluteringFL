@@ -71,7 +71,8 @@ class PFLServer(Server):  # (Server):
     ) -> None:
         super().__init__(client_manager=client_manager, strategy=strategy)
         self._client_manager: ClientManager = client_manager
-        self.parameters_dict: Dict[str, Parameters] = {"0": Parameters(
+        default_key = self._client_manager.get_default_key()
+        self.parameters_dict: Dict[str, Parameters] = {default_key: Parameters(
             tensors=[], tensor_type="numpy.ndarray"
         )}  # can hold an arbitrary number of personalised models; default is one (equivalent to non-PFL)
         log(INFO, "strategy is None %s".format(strategy is None))
@@ -213,9 +214,11 @@ class PFLServer(Server):  # (Server):
 
             # for testing purposes: artificially modify existing cluster
             if current_round == 1:
-                split_key = "0"
-                self._client_manager.split_cluster(split_key)
+                # split_key = "A"
+                # self._client_manager.split_cluster(split_key)
+                self._client_manager.compute_clusters_data()
                 current_cluster_keys = self._client_manager.get_cluster_keys()
+                split_key = "A"  # TODO this only works if we cluster only once -> need to map old cluster models to new ones (or recompute)
                 for cluster_key in current_cluster_keys:
                     if cluster_key not in self.parameters_dict.keys():
                         self.parameters_dict[cluster_key] = copy.deepcopy(self.parameters_dict[split_key])

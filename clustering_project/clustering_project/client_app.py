@@ -16,14 +16,18 @@ from clustering_project.task import (
 
 # Define Flower Client and client_fn
 class FlowerClient(NumPyClient):
-    def __init__(self, net, trainloader, valloader, local_epochs):
+    def __init__(self, net, trainloader, valloader, local_epochs, partition_id, num_partitions):
         self.net = net
         self.trainloader = trainloader
         self.valloader = valloader
         self.local_epochs = local_epochs
+        self.partition_id = partition_id
+        self.num_partitions = num_partitions
 
     def fit(self, parameters, config):
         set_weights(self.net, parameters)
+        self.partition_id = config['partition_id']
+        self.trainloader, self.valloader = load_data(self.partition_id, self.num_partitions)
         results = train(
             self.net,
             self.trainloader,
@@ -48,7 +52,7 @@ def client_fn(context: Context):
     local_epochs = context.run_config["local-epochs"]
 
     # Return Client instance
-    return FlowerClient(net, trainloader, valloader, local_epochs).to_client()
+    return FlowerClient(net, trainloader, valloader, local_epochs, partition_id=partition_id, num_partitions=num_partitions).to_client()
 
 
 # Flower ClientApp

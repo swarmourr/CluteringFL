@@ -13,12 +13,11 @@
 # limitations under the License.
 # ==============================================================================
 """Flower ClientManager."""
-
-
+import json
 import random
 import threading
 from abc import ABC, abstractmethod
-from logging import INFO
+from logging import INFO, WARNING
 from typing import Dict, List, Optional, Tuple
 
 from flwr.common.logger import log
@@ -26,6 +25,7 @@ from flwr.common.logger import log
 from flwr.server.client_proxy import ClientProxy
 from flwr.server.criterion import Criterion
 from flwr.server.client_manager import ClientManager
+from os.path import expanduser
 
 
 class ClusteredClientManager(ClientManager):
@@ -113,7 +113,7 @@ class ClusteredClientManager(ClientManager):
         """Return all available clients, with index of the current cluster."""
 
     @abstractmethod
-    def split_cluster(self) -> bool:
+    def split_cluster(self, cluster_key: str) -> bool:
         """Test method to modify clusters"""
 
     @abstractmethod
@@ -123,6 +123,14 @@ class ClusteredClientManager(ClientManager):
     @abstractmethod
     def all(self) -> Dict[str, ClientProxy]:
         """Return all available clients."""
+
+    @abstractmethod
+    def get_default_key(self) -> str:
+        """Return the default key that labels the first cluster"""
+
+    @abstractmethod
+    def compute_clusters_data(self) -> bool:
+        """load clustering mapping and convert to clusters accordingly. Disregard input if it cannot be converted."""
 
     @abstractmethod
     def wait_for_cluster(self, num_clients: int, timeout: int, cluster_key: str) -> bool:
@@ -135,6 +143,10 @@ class ClusteredClientManager(ClientManager):
     @abstractmethod
     def get_cluster_keys(self) -> List[str]:
         """Return list of keys for current clusters."""
+
+    @abstractmethod
+    def get_cluster_partition_ids(self) -> Dict[str, List[int]]:
+        """Return partition IDs for clusters"""
 
     @abstractmethod
     def sample(
@@ -164,6 +176,9 @@ class SimpleClusteredClientManager(ClusteredClientManager):
         for key, clients in self.clusters.items():
             available_dict[key] = len(clients)
         return available_dict
+
+    def get_default_key(self) -> str:
+        return self.default_key
 
     def num_available_in_cluster(self, cluster_key: str) -> int:
         if cluster_key in self.clusters.keys():
@@ -222,10 +237,13 @@ class SimpleClusteredClientManager(ClusteredClientManager):
         sampled_cids = random.sample(available_cids, num_clients)
         return [self.clients[cid] for cid in sampled_cids]
 
-    def __init__(self) -> None:
+    def __init__(self, seed=None, default_key="A") -> None:
+        self.seed = seed
+        self.default_key = default_key
         self.clients: Dict[str, ClientProxy] = {}
         self._cv = threading.Condition()
-        self.clusters: Dict[str, Dict[str, ClientProxy]] = {"0": {}}
+        self.clusters: Dict[str, Dict[str, ClientProxy]] = {default_key: {}}
+        self.cluster_partition_ids = {default_key: []}
 
     def __len__(self) -> int:
         """Return the number of available clients.
@@ -287,6 +305,9 @@ class SimpleClusteredClientManager(ClusteredClientManager):
 
         self.clients[client.cid] = client
         self.clusters[list(self.clusters)[0]][client.cid] = client
+        self.cluster_partition_ids[list(self.clusters)[0]] += [len(self.clients)]
+        log(WARNING,
+            "new cluster keys {}, values {}".format([key for key in self.cluster_partition_ids.keys()], [val for val in self.cluster_partition_ids.values()]))
         with self._cv:
             self._cv.notify_all()
 
@@ -313,11 +334,62 @@ class SimpleClusteredClientManager(ClusteredClientManager):
         """Return all available clients."""
         return self.clients
 
-    def _compute_clusters(self) -> None:
-        return
+    def _load_cluster(self, filename) -> Dict[str, List[str]]:
+        with open(filename) as f:
+            cluster_mapping = json.load(f)
+            return cluster_mapping
+
+    """    def compute_clusters_data(self) -> bool:
+        #TODO
+        path = expanduser("~")+"/Pycharm/Exercises/flower/CluteringFL"
+        filename = "../../../Statistics/cluster_mapping.json"
+        cluster_mapping = self._load_cluster(filename=filename)
+        new_clusters = {}
+        all_clients = self.all()
+        all_clients_assigned = {cid: False for cid in all_clients.keys()}
+        for cluster_key, client_list in cluster_mapping.items():
+            for client_id in client_list:
+                if client_id not in all_clients.keys():
+                    raise ValueError("Client {} in clustering output does not exist in the system.".format(client_id))
+                if cluster_key not in new_clusters.keys():
+                    new_clusters[cluster_key] = {}
+                new_clusters[cluster_key][client_id] = all_clients[client_id]
+                all_clients_assigned[client_id] = True
+        if all(all_clients_assigned.items()):
+            self.clusters = new_clusters
+            self.cluster_partition_ids = cluster_mapping
+            return True
+        else:
+            log(WARNING, "not all clients were assigned to a new cluster; disregarding new clustering structure.")
+            return False"""
+
+    def compute_clusters_data(self) -> bool:
+        #TODO call clustering function directly; pass seed
+        path = expanduser("~")+"/PycharmProjects/Exercises/flower/CluteringFL"
+        filename = path+"/cluster_mapping.json"
+        cluster_mapping = self._load_cluster(filename=filename)
+        new_clusters = {}
+        all_clients = self.all()
+        all_clients_keys = list(all_clients.keys())
+        all_clients_assigned = {cid: False for cid in all_clients.keys()}
+        arbitrary_client_idx = 0
+        for cluster_key, client_list in cluster_mapping.items():
+            for partition_id in client_list:
+                if cluster_key not in new_clusters.keys():
+                    new_clusters[cluster_key] = {}
+                new_clusters[cluster_key][all_clients_keys[arbitrary_client_idx]] = all_clients[all_clients_keys[arbitrary_client_idx]]
+                all_clients_assigned[all_clients_keys[arbitrary_client_idx]] = True
+                arbitrary_client_idx += 1
+        if all(all_clients_assigned.items()):
+            self.clusters = new_clusters
+            self.cluster_partition_ids = cluster_mapping
+            return True
+        else:
+            log(WARNING, "not all clients were assigned to a new cluster; disregarding new clustering structure.")
+            return False
 
     def split_cluster(self, cluster_key: str) -> bool:
-        if self.num_available_in_cluster(cluster_key) > 2:
+        """if self.num_available_in_cluster(cluster_key) > 2:
             clients_in_cluster = self.clusters[cluster_key]
             new_cluster_key1 = cluster_key+"1"
             new_cluster_key2 = cluster_key + "2"
@@ -330,10 +402,15 @@ class SimpleClusteredClientManager(ClusteredClientManager):
                     self.clusters[new_cluster_key2][client.cid] = client
             del self.clusters[cluster_key]
             return True
+        log(WARNING, "not enough clients available to split cluster {}.".format(cluster_key))
+        return False"""
         return False
 
     def get_cluster_keys(self) -> List[str]:
         return list(self.clusters)
+
+    def get_cluster_partition_ids(self) -> Dict[str, List[int]]:
+        return self.cluster_partition_ids
 
     def sample(
         self,
