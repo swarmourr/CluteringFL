@@ -4,16 +4,14 @@ from sklearn.metrics import silhouette_score
 from sklearn.datasets import make_blobs
 from sklearn.preprocessing import StandardScaler
 
-from Clustering.FLKmeans import KMeans
-from Clustering.Distances import DistanceMetric
-from Statistics.stats import DataFrameStatistics
-from Statistics.model import GradientExtractor, SimpleModel
+from clustering_project.Clustering.FLKmeans import KMeans
+from clustering_project.Clustering.Distances import DistanceMetric
+from clustering_project.Statistics.stats import DataFrameStatistics
+from clustering_project.Statistics.model import GradientExtractor, SimpleModel
 
 import glob
 
 import numpy as np
-import pandas as pd
-from sklearn.cluster import KMeans as km
 
 
 import torch
@@ -303,6 +301,10 @@ class Orchestrator:
         Returns:
         - cluster_mapping: A dictionary mapping each cluster ID to a list of client IDs.
         """
+        trains, testloaders = load_data(10,
+                                              DirichletPartitioner(num_partitions=10, partition_by="label", alpha=0.5,
+                                                                   min_partition_size=10, self_balancing=True))
+
         Client_list = list()
         client_idx = list()
         stats = pd.DataFrame()
@@ -407,6 +409,8 @@ class Orchestrator:
         return cluster_mapping
 
 
+
+"""
 # Step 1: Load the data
 # Define the number of partitions (clients) and partitioning strategy
 num_partitions = 5  # For example, 5 clients
@@ -432,3 +436,4 @@ cluster_mapping_gradients = orchestrator.main_gradients(distance_metric=Distance
 # Print the cluster mapping for the gradients
 print("Cluster Mapping for Gradients:")
 print(cluster_mapping_gradients)
+"""

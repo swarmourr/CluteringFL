@@ -21,20 +21,21 @@ class Net(nn.Module):
 
     def __init__(self):
         super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(3, 6, 5)
-        self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
+        self.conv1 = nn.Conv2d(1, 20, 5, 1)
+        self.conv2 = nn.Conv2d(20, 50, 5, 1)
+        self.fc1 = nn.Linear(4 * 4 * 50, 500)
+        self.fc2 = nn.Linear(500, 10)
 
     def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = x.view(-1, 16 * 5 * 5)
+        x = F.relu(self.conv1(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = F.relu(self.conv2(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = x.view(-1, 4 * 4 * 50)
         x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        return self.fc3(x)
+        x = self.fc2(x)
+
+        return F.log_softmax(x, dim=1)
 
 fds = None
 
@@ -49,13 +50,13 @@ def load_data(partition_id: int, num_partitions: int):
             },
             trust_remote_code=True
         )
-    log(WARNING, "loading partition with ID: {}".format(partition_id))
-    partition = fds.load_partition(partition_id)
+    log(WARNING, "loading partition with ID: {} of {} partitions".format(partition_id, num_partitions))
+    #partition = fds.load_partition(partition_id)
     # Divide data on each node: 80% train, 20% test
-    partition_train_test = partition.train_test_split(test_size=0.2, seed=42)
-    pytorch_transforms = Compose(
-        [ToTensor(), Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
-    )
+    # partition_train_test = partition.train_test_split(test_size=0.2, seed=42)
+    #pytorch_transforms = Compose(
+    #    [ToTensor(), Normalize((0.1307,), (0.3081,))]
+    #)
 
     def apply_transforms(batch):
         """Apply transforms to the partition from FederatedDataset."""

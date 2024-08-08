@@ -1,9 +1,9 @@
-from Clustering.FLKmeans import KMeans
+from clustering_project.Clustering.FLKmeans import KMeans
 import numpy as np 
-from Clustering.Distances import DistanceMetric
+from clustering_project.Clustering.Distances import DistanceMetric
 
 # Example usage
-data = np.array([
+"""data = np.array([
     [1, 0],
     [0, 1],
     [0, 0],
@@ -20,3 +20,4 @@ print("Centroids:", kmeans.centroids)
 
 # Plot the clusters
 kmeans.plot_clusters(data)
+"""

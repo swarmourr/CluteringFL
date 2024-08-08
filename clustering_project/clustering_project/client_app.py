@@ -27,6 +27,7 @@ class FlowerClient(NumPyClient):
     def fit(self, parameters, config):
         set_weights(self.net, parameters)
         self.partition_id = config['partition_id']
+
         self.trainloader, self.valloader = load_data(self.partition_id, self.num_partitions)
         results = train(
             self.net,

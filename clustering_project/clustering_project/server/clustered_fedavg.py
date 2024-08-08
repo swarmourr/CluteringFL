@@ -115,9 +115,13 @@ class ClusteredFedAvg(PFLStrategy):
         cluster_partition_ids = client_manager.get_cluster_partition_ids()
         for cluster_key in client_manager.get_cluster_keys():
             # Sample clients
-            sample_size, min_num_clients = self.num_fit_clients_in_cluster(
-                client_manager.num_available_in_cluster(cluster_key), cluster_key=cluster_key
-            )
+            max_clients_in_cluster = client_manager.max_num_in_cluster(cluster_key=cluster_key)
+            if max_clients_in_cluster > 1:
+                sample_size, min_num_clients = self.num_fit_clients_in_cluster(
+                    client_manager.num_available_in_cluster(cluster_key), cluster_key=cluster_key
+                )
+            else:
+                sample_size, min_num_clients = 1, 1
             log(WARNING, "sample size {}, min num {}, available in cluster {}: {}".format(sample_size, min_num_clients, cluster_key, client_manager.num_available_in_cluster(cluster_key)))
             clients_cluster = client_manager.sample_cluster(
                 num_clients=sample_size, min_num_clients=min_num_clients, cluster_key=cluster_key
@@ -126,10 +130,10 @@ class ClusteredFedAvg(PFLStrategy):
                 config = {}
                 if self.on_fit_config_fn is not None:
                     # Custom fit config function provided
-                    log(WARNING, "Custom fit config")
+                    # log(WARNING, "Custom fit config")
                     config = self.on_fit_config_fn(partition_id=partition_id)
                 else:
-                    log(WARNING, "Custom fit config is NOne")
+                    log(WARNING, "Custom fit config is None")
                 fit_ins = FitIns(parameters_dict[cluster_key], config)
                 config_fits += [(clients_cluster[idx], fit_ins)]
 
@@ -209,11 +213,17 @@ class ClusteredFedAvg(PFLStrategy):
         config_evals = []
         for cluster_key in client_manager.get_cluster_keys():
             evaluate_ins = EvaluateIns(parameters_dict[cluster_key], config)
-
+            max_clients_in_cluster = client_manager.max_num_in_cluster(cluster_key=cluster_key)
             # Sample clients
-            sample_size, min_num_clients = self.num_evaluation_clients_in_cluster(
-                client_manager.num_available_in_cluster(cluster_key), cluster_key=cluster_key
-            )
+            if max_clients_in_cluster > 1:
+                sample_size, min_num_clients = self.num_fit_clients_in_cluster(
+                    client_manager.num_available_in_cluster(cluster_key), cluster_key=cluster_key
+                )
+            else:
+                sample_size, min_num_clients = 1, 1
+            # sample_size, min_num_clients = self.num_evaluation_clients_in_cluster(
+            #    client_manager.num_available_in_cluster(cluster_key), cluster_key=cluster_key
+            # )
             log(WARNING, "eval sample size {}, min num {}, available in cluster {}: {}".format(sample_size, min_num_clients, cluster_key, client_manager.num_available_in_cluster(cluster_key)))
             clients = client_manager.sample_cluster(
                 num_clients=sample_size, min_num_clients=min_num_clients, cluster_key=cluster_key

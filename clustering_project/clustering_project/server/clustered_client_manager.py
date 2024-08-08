@@ -16,16 +16,18 @@
 import json
 import random
 import threading
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from logging import INFO, WARNING
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 from flwr.common.logger import log
 
 from flwr.server.client_proxy import ClientProxy
 from flwr.server.criterion import Criterion
 from flwr.server.client_manager import ClientManager
-from os.path import expanduser
+
+from clustering_project.Clustering.Distances import DistanceMetric
+from clustering_project.Orchestrator import Orchestrator
 
 
 class ClusteredClientManager(ClientManager):
@@ -96,6 +98,11 @@ class ClusteredClientManager(ClientManager):
             Indicating if registration was successful. False if ClientProxy is
             already registered or can not be registered for any reason.
         """
+
+    @abstractmethod
+    def max_num_in_cluster(self, cluster_key: str) -> int:
+        """returns the maximum number of expected clients in the cluster (number of clients assigned by the
+        clustering function)"""
 
     @abstractmethod
     def unregister(self, client: ClientProxy) -> None:
@@ -216,7 +223,8 @@ class SimpleClusteredClientManager(ClusteredClientManager):
         # Block until at least num_clients are connected.
         if min_num_clients is None:
             min_num_clients = num_clients
-        self.wait_for_cluster(min_num_clients, cluster_key=cluster_key)
+        if self.max_num_in_cluster(cluster_key) >= num_clients:
+            self.wait_for_cluster(min_num_clients, cluster_key=cluster_key)
         # Sample clients which meet the criterion
         available_cids = list(self.all_in_cluster(cluster_key))
         if criterion is not None:
@@ -286,6 +294,9 @@ class SimpleClusteredClientManager(ClusteredClientManager):
             return self._cv.wait_for(
                 lambda: len(self.clients) >= num_clients, timeout=timeout
             )
+
+    def max_num_in_cluster(self, cluster_key: str) -> int:
+        return len(self.cluster_partition_ids[cluster_key])
 
     def register(self, client: ClientProxy) -> bool:
         """Register Flower ClientProxy instance.
@@ -365,16 +376,20 @@ class SimpleClusteredClientManager(ClusteredClientManager):
 
     def compute_clusters_data(self) -> bool:
         #TODO call clustering function directly; pass seed
-        path = expanduser("~")+"/PycharmProjects/Exercises/flower/CluteringFL"
-        filename = path+"/cluster_mapping.json"
-        cluster_mapping = self._load_cluster(filename=filename)
+        #path = expanduser("~")+"/PycharmProjects/Exercises/flower/CluteringFL"
+        #filename = path+"/cluster_mapping.json"
+        # Step 1: Initialize the Orchestrator
+        orchestrator = Orchestrator(distance_metric=DistanceMetric.EUCLIDEAN, max_clusters=10)
+        # Step 2: Call main_data to cluster the data
+        cluster_mapping = orchestrator.main_data(trains=None, distance_metric=DistanceMetric.EUCLIDEAN)
+        # cluster_mapping = self._load_cluster(filename=filename)
         new_clusters = {}
         all_clients = self.all()
         all_clients_keys = list(all_clients.keys())
         all_clients_assigned = {cid: False for cid in all_clients.keys()}
         arbitrary_client_idx = 0
         for cluster_key, client_list in cluster_mapping.items():
-            for partition_id in client_list:
+            for _ in client_list:
                 if cluster_key not in new_clusters.keys():
                     new_clusters[cluster_key] = {}
                 new_clusters[cluster_key][all_clients_keys[arbitrary_client_idx]] = all_clients[all_clients_keys[arbitrary_client_idx]]

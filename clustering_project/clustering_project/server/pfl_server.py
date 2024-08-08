@@ -129,6 +129,19 @@ class PFLServer(Server):  # (Server):
         # Run federated learning for num_rounds
         start_time = timeit.default_timer()
 
+
+        # split_key = "A"
+        # self._client_manager.split_cluster(split_key)
+        #TODO do this only if clustering based on data
+        log(INFO, "[CLUSTERING before round 1]")
+        self._client_manager.compute_clusters_data()
+        current_cluster_keys = self._client_manager.get_cluster_keys()
+        split_key = "A"  # TODO this only works if we cluster only once -> need to map old cluster models to new ones (or recompute)
+        for cluster_key in current_cluster_keys:
+            if cluster_key not in self.parameters_dict.keys():
+                self.parameters_dict[cluster_key] = copy.deepcopy(self.parameters_dict[split_key])
+        del self.parameters_dict[split_key]
+
         for current_round in range(1, num_rounds + 1):
             log(INFO, "")
             log(INFO, "[ROUND %s]", current_round)
@@ -211,18 +224,6 @@ class PFLServer(Server):  # (Server):
                 history.add_metrics_distributed(
                      server_round=current_round, metrics=metrics_fed_mean
                 )
-
-            # for testing purposes: artificially modify existing cluster
-            if current_round == 1:
-                # split_key = "A"
-                # self._client_manager.split_cluster(split_key)
-                self._client_manager.compute_clusters_data()
-                current_cluster_keys = self._client_manager.get_cluster_keys()
-                split_key = "A"  # TODO this only works if we cluster only once -> need to map old cluster models to new ones (or recompute)
-                for cluster_key in current_cluster_keys:
-                    if cluster_key not in self.parameters_dict.keys():
-                        self.parameters_dict[cluster_key] = copy.deepcopy(self.parameters_dict[split_key])
-                del self.parameters_dict[split_key]
         # Bookkeeping
         end_time = timeit.default_timer()
         elapsed = end_time - start_time
