@@ -8,7 +8,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision.transforms import Compose, Normalize, ToTensor
 from flwr_datasets import FederatedDataset
-from flwr_datasets.partitioner import IidPartitioner, ShardPartitioner
+from flwr_datasets.partitioner import IidPartitioner, ShardPartitioner, DirichletPartitioner
 
 
 #DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -47,8 +47,7 @@ def load_data(partition_id: int, num_partitions: int):
     if fds is None:
         fds = FederatedDataset(
             dataset="mnist",
-            partitioners={"train": ShardPartitioner(num_partitions,partition_by="label",num_shards_per_partition=2),
-            },
+            partitioners={"train": DirichletPartitioner(num_partitions,partition_by="label", alpha=0.5, min_partition_size=10, self_balancing=True, seed=42)},
             trust_remote_code=True
         )
     
