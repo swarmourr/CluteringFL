@@ -229,19 +229,26 @@ class Orchestrator:
             labels = self.cluster_data(data, n_clusters=i)
 
             # Compute the silhouette score for the current number of clusters
-            silhouette_avg = silhouette_score(data, labels)
+            try:
+                # Compute the silhouette score for the current number of clusters
+                silhouette_avg = silhouette_score(data, labels)
+                print(f"Silhouette Score for {i} clusters: {silhouette_avg:.3f}")
 
-            # Print the silhouette score
-            print(f"Silhouette Score for {i} clusters: {silhouette_avg:.3f}")
+                # Determine if this is the best score
+                if silhouette_avg > max_score:
+                    max_score = silhouette_avg
+                    optimal_clusters = i
+                    self._labels = labels
 
-            # Determine if this is the best score
-            if silhouette_avg > max_score:
-                max_score = silhouette_avg
-                optimal_clusters = i
-                self._labels = labels
-
+            except ValueError as e:
+                print(f"Error computing silhouette score for {i} clusters: {e}")
+                self.optimal_clusters = 1
+                self._labels = np.zeros(data.shape[0], dtype=int)
+                return -1
+                
         self.optimal_clusters = optimal_clusters
         print(f"Optimal number of clusters based on silhouette score: {self.optimal_clusters}")
+        return self.optimal_clusters
 
     def get_cluster_info(self):
         """
@@ -418,6 +425,15 @@ orchestrator = Orchestrator(distance_metric=DistanceMetric.EUCLIDEAN, max_cluste
 
 # Step 3: Call main_data to cluster the data
 cluster_mapping_data = orchestrator.main_data(distance_metric=DistanceMetric.EUCLIDEAN)
+
+
+# Step 2: Initialize the Orchestrator
+orchestrator = Orchestrator(distance_metric=DistanceMetric.EUCLIDEAN, max_clusters=10)
+
+# Step 3: Call main_data to cluster the data
+cluster_mapping_data = orchestrator.main_data(distance_metric=DistanceMetric.EUCLIDEAN,partition=DirichletPartitioner(num_partitions=10, partition_by="label",alpha=0.5, min_partition_size=10,self_balancing=True))
+
+
 
 """
 # Step 2: Initialize the Orchestrator
