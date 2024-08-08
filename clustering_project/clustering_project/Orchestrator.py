@@ -187,8 +187,8 @@ class Orchestrator:
         Parameters:
         - value (int): The new value for the optimal number of clusters.
         """
-        if not isinstance(value, int) or value < 2:
-            raise ValueError("Optimal clusters must be an integer greater than or equal to 2.")
+        #if not isinstance(value, int) or value < 2:
+           # raise ValueError("Optimal clusters must be an integer greater than or equal to 2.")
         self._optimal_clusters = value
 
     def cluster_data(self, data: pd.DataFrame, n_clusters: int):
@@ -245,7 +245,7 @@ class Orchestrator:
                 self.optimal_clusters = 1
                 self._labels = np.zeros(data.shape[0], dtype=int)
                 return -1
-                
+
         self.optimal_clusters = optimal_clusters
         print(f"Optimal number of clusters based on silhouette score: {self.optimal_clusters}")
         return self.optimal_clusters
@@ -300,7 +300,7 @@ class Orchestrator:
             json.dump(json_compatible_mapping, f, indent=4)
         print(f"Cluster mapping exported to {filename}")
 
-    def main_data(self, num_partitions=10, distance_metric=DistanceMetric.EUCLIDEAN, partition = DirichletPartitioner(num_partitions=10, partition_by="label",alpha=0.5, min_partition_size=10,self_balancing=True)):
+    def main_data(self, num_partitions=10, distance_metric=DistanceMetric.EUCLIDEAN, partition = IidPartitioner(10)):
         """
         Process and cluster data from the given data loaders.
 
@@ -312,7 +312,7 @@ class Orchestrator:
         - cluster_mapping: A dictionary mapping each cluster ID to a list of client IDs.
         DirichletPartitioner(num_partitions=10, partition_by="label", alpha=0.5,min_partition_size=10, self_balancing=True,)
         """
-        trains, testloaders ,client_idx = load_data(num_partitions,partition)
+        trains, testloaders ,client_idx = load_data(10,partition)
 
         Client_list = list()
         client_idx_final = list()
@@ -418,7 +418,7 @@ class Orchestrator:
         orchestrator.export_cluster_mapping_to_json(cluster_mapping, filename="cluster_mapping.json")
 
         return cluster_mapping
-
+"""
 
 # Step 2: Initialize the Orchestrator
 orchestrator = Orchestrator(distance_metric=DistanceMetric.EUCLIDEAN, max_clusters=10)
@@ -435,7 +435,7 @@ cluster_mapping_data = orchestrator.main_data(distance_metric=DistanceMetric.EUC
 
 
 
-"""
+
 # Step 2: Initialize the Orchestrator
 orchestrator = Orchestrator(distance_metric=DistanceMetric.EUCLIDEAN, max_clusters=10)
 
