@@ -4,7 +4,7 @@ from sklearn.metrics import silhouette_score
 from sklearn.datasets import make_blobs
 from sklearn.preprocessing import StandardScaler
 
-from clustering_project.clustering_project.Clustering.FLKmeans import KMeans
+from clustering_project.Clustering.FLKmeans import KMeans
 from clustering_project.Clustering.Distances import DistanceMetric
 from clustering_project.Statistics.stats import DataFrameStatistics
 from clustering_project.Statistics.model import GradientExtractor, SimpleModel
@@ -293,7 +293,7 @@ class Orchestrator:
             json.dump(json_compatible_mapping, f, indent=4)
         print(f"Cluster mapping exported to {filename}")
 
-    def main_data(self, num_partitions=10, distance_metric=DistanceMetric.EUCLIDEAN, partition = IidPartitioner(num_partitions=10,seed=42)):
+    def main_data(self, num_partitions=10, distance_metric=DistanceMetric.EUCLIDEAN, partition = DirichletPartitioner(num_partitions=10, partition_by="label",alpha=0.5, min_partition_size=10,self_balancing=True)):
         """
         Process and cluster data from the given data loaders.
 
@@ -326,18 +326,20 @@ class Orchestrator:
             client_idx_final.append(client.client_id)
             stats = pd.concat([stats, single_row_df])
         stats = (stats.notnull()).astype('int')
-
+        print(stats)
         # Optionally standardize the data
         scaler = StandardScaler()
         data_scaled = scaler.fit_transform(stats)
 
         # Initialize the Orchestrator
         print("clustering")
+        print(client_idx_final)
         orchestrator = Orchestrator(max_clusters=len(client_idx_final) - 1, distance_metric=distance_metric)
         # Find the optimal clusters
         orchestrator.find_optimal_clusters(data_scaled)
         # Get cluster information
         labels, centroids = orchestrator.get_cluster_info()
+        print(labels)
         print("Labels of the optimal clustering:", labels)
         print("Centroids of the optimal clustering:\n", centroids)
 
@@ -410,6 +412,12 @@ class Orchestrator:
 
         return cluster_mapping
 
+
+# Step 2: Initialize the Orchestrator
+orchestrator = Orchestrator(distance_metric=DistanceMetric.EUCLIDEAN, max_clusters=10)
+
+# Step 3: Call main_data to cluster the data
+cluster_mapping_data = orchestrator.main_data(distance_metric=DistanceMetric.EUCLIDEAN)
 
 """
 # Step 2: Initialize the Orchestrator

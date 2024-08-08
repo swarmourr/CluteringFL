@@ -379,12 +379,12 @@ class SimpleClusteredClientManager(ClusteredClientManager):
         #path = expanduser("~")+"/PycharmProjects/Exercises/flower/CluteringFL"
         #filename = path+"/cluster_mapping.json"
         # Step 1: Initialize the Orchestrator
+        all_clients = self.all()
         orchestrator = Orchestrator(distance_metric=DistanceMetric.EUCLIDEAN, max_clusters=10)
         # Step 2: Call main_data to cluster the data
-        cluster_mapping = orchestrator.main_data(trains=None, distance_metric=DistanceMetric.EUCLIDEAN)
+        cluster_mapping = orchestrator.main_data(distance_metric=DistanceMetric.EUCLIDEAN, num_partitions=len(all_clients))
         # cluster_mapping = self._load_cluster(filename=filename)
         new_clusters = {}
-        all_clients = self.all()
         all_clients_keys = list(all_clients.keys())
         all_clients_assigned = {cid: False for cid in all_clients.keys()}
         arbitrary_client_idx = 0
