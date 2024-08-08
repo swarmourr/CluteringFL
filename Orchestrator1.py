@@ -25,9 +25,6 @@ from flwr_datasets import FederatedDataset
 from flwr_datasets.partitioner import IidPartitioner, DirichletPartitioner, DistributionPartitioner, ExponentialPartitioner, InnerDirichletPartitioner, LinearPartitioner, NaturalIdPartitioner, PathologicalPartitioner, ShardPartitioner, SizePartitioner, SquarePartitioner
 
 
-fds = None
-
-
 def flatten_image_dataframe(df):
     def convert_string_to_array(s):
         # Remove extra brackets and split by spaces
@@ -50,6 +47,8 @@ def flatten_image_dataframe(df):
     return pixel_df
 
 
+fds = None
+
 def load_data(num_partitions: int, partitioner):
     """Load partition MNIST data."""
     # Only initialize `FederatedDataset` once
@@ -58,15 +57,15 @@ def load_data(num_partitions: int, partitioner):
         fds = FederatedDataset(
             dataset="mnist",
             partitioners={"train": partitioner,
-                          },
+            },
             trust_remote_code=True
         )
-
+    
     def apply_transforms(batch):
         """Apply transforms to the partition from FederatedDataset."""
         batch["img"] = [pytorch_transforms(img) for img in batch["img"]]
         return batch
-
+    
     trainloaders = []
     testloaders = []
 
@@ -112,7 +111,7 @@ class Client:
         """
         if not isinstance(new_array, np.ndarray):
             raise ValueError("The new_array must be a NumPy ndarray.")
-
+        
         self.data_arrays.append(new_array)
 
     def _generate_default_column_names(self, num_columns):
@@ -121,11 +120,11 @@ class Client:
 
         Parameters:
         - num_columns: int, number of columns needed
-
+        
         Returns:
         - list of str, default column names
         """
-        return [f"col_{i + 1}" for i in range(num_columns)]
+        return [f"col_{i+1}" for i in range(num_columns)]
 
     def to_dataframe(self):
         """
@@ -137,24 +136,23 @@ class Client:
         # Check if the list is empty
         if not self.data_arrays:
             return pd.DataFrame()
-
+        
         # Convert each NumPy array to a DataFrame
         dfs = [pd.DataFrame(array) for array in self.data_arrays]
-
+        
         # Concatenate all DataFrames along the columns
         df = pd.concat(dfs, axis=1)
-
+        
         # Set column names if provided, else use default names
         if self.column_names:
             df.columns = self.column_names[:df.shape[1]]  # Slice column_names to match the number of columns
         else:
             df.columns = self._generate_default_column_names(df.shape[1])
-
+        
         return df
 
     def __repr__(self):
         return f"Client(client_id={self.client_id}, num_arrays={len(self.data_arrays)})"
-
 
 class Orchestrator:
     def __init__(self, distance_metric=DistanceMetric.EUCLIDEAN, max_clusters=10):
@@ -203,10 +201,10 @@ class Orchestrator:
         """
         # Initialize KMeans with the specified number of clusters
         kmeans = KMeans(n_clusters=n_clusters, distance_metric=self.distance_metric)
-
+        
         # Fit the KMeans algorithm on the data
         labels = kmeans.fit(data)
-
+        
         # Set centroids for access later
         self._centroids = kmeans.centroids
 
@@ -226,10 +224,10 @@ class Orchestrator:
         for i in range(2, self.max_clusters + 1):
             # Cluster data and get labels
             labels = self.cluster_data(data, n_clusters=i)
-
+            
             # Compute the silhouette score for the current number of clusters
             silhouette_avg = silhouette_score(data, labels)
-
+            
             # Print the silhouette score
             print(f"Silhouette Score for {i} clusters: {silhouette_avg:.3f}")
 
@@ -238,7 +236,7 @@ class Orchestrator:
                 max_score = silhouette_avg
                 optimal_clusters = i
                 self._labels = labels
-
+        
         self.optimal_clusters = optimal_clusters
         print(f"Optimal number of clusters based on silhouette score: {self.optimal_clusters}")
 
@@ -266,7 +264,7 @@ class Orchestrator:
         """
         if self._labels is None:
             raise ValueError("Clusters have not been computed. Call 'find_optimal_clusters' first.")
-
+        
         cluster_mapping = {}
         for idx, label in enumerate(self._labels):
             # Convert the cluster ID to a standard Python integer
@@ -274,7 +272,7 @@ class Orchestrator:
             if cluster_id not in cluster_mapping:
                 cluster_mapping[cluster_id] = []
             cluster_mapping[int(cluster_id)].append(int(original_labels[idx]))
-
+        
         return cluster_mapping
 
     def export_cluster_mapping_to_json(self, cluster_mapping, filename="cluster_mapping.json"):
@@ -287,49 +285,40 @@ class Orchestrator:
         """
         # Convert keys to strings to ensure compatibility with JSON
         json_compatible_mapping = {str(k): v for k, v in cluster_mapping.items()}
-
+        
         with open(filename, 'w') as f:
             json.dump(json_compatible_mapping, f, indent=4)
         print(f"Cluster mapping exported to {filename}")
 
-    def main_data(self, trains, distance_metric=DistanceMetric.EUCLIDEAN):
-        """
-        Process and cluster data from the given data loaders.
-
-        Parameters:
-        - trains: List of DataLoader objects, each representing client training data.
-        - distance_metric (DistanceMetric): The distance metric to use for clustering.
-
-        Returns:
-        - cluster_mapping: A dictionary mapping each cluster ID to a list of client IDs.
-        """
-        Client_list = list()
-        client_idx = list()
-        stats = pd.DataFrame()
-        for idx, train in enumerate(trains):
+def main_data(trains,distance_metric=DistanceMetric.EUCLIDEAN):
+        Client_list=list()
+        client_idx=list()
+        stats=pd.DataFrame()
+        for idx,train in enumerate(trains):
             print(idx)
-            client = Client(idx)
+            client=Client(idx)
             Client_list.append(client)
             for batch in train:
                 for batch_one in batch['img']:
                     client.add_array(batch_one.numpy().flatten())
         for client in Client_list:
             print(client)
-            data = client.to_dataframe()
+            data = client.to_dataframe() 
             df_stats = DataFrameStatistics(data)
-            all_stats = DataFrameStatistics(data).all_statistics()
-            single_row_df = df_stats.create_feature_stat_df(all_stats)
+            all_stats=DataFrameStatistics(data).all_statistics()
+            single_row_df=df_stats.create_feature_stat_df(all_stats)
             client_idx.append(client.client_id)
-            stats = pd.concat([stats, single_row_df])
-        stats = (stats.notnull()).astype('int')
+            stats=pd.concat([stats, single_row_df])
+        stats=(stats.notnull()).astype('int')
 
         # Optionally standardize the data
         scaler = StandardScaler()
         data_scaled = scaler.fit_transform(stats)
 
+
         # Initialize the Orchestrator
         print("clustering")
-        orchestrator = Orchestrator(max_clusters=len(client_idx) - 1, distance_metric=distance_metric)
+        orchestrator = Orchestrator(max_clusters=len(client_idx)-1,distance_metric=distance_metric)
         # Find the optimal clusters
         orchestrator.find_optimal_clusters(data_scaled)
         # Get cluster information
@@ -344,17 +333,9 @@ class Orchestrator:
         # Export the mapping to a JSON file
         orchestrator.export_cluster_mapping_to_json(cluster_mapping, filename="data_cluster_mapping.json")
         return cluster_mapping
+    
+def main_gradiants(distance_metric=DistanceMetric.EUCLIDEAN):
 
-    def main_gradients(self, distance_metric=DistanceMetric.EUCLIDEAN):
-        """
-        Generate and cluster gradients from models.
-
-        Parameters:
-        - distance_metric (DistanceMetric): The distance metric to use for clustering.
-
-        Returns:
-        - cluster_mapping: A dictionary mapping each cluster ID to a list of model names.
-        """
         # Define the model architecture parameters
         model_params = {
             'input_size': 10,
@@ -371,6 +352,15 @@ class Orchestrator:
         # Extract gradients from all models
         gradients_df = extractor.extract_gradients()
 
+        
+        # Number of models to create
+        num_models = 5
+
+        # Create GradientExtractor instance
+        extractor = GradientExtractor(SimpleModel, model_params, num_models)
+
+        # Extract gradients from all models
+        gradients_df = extractor.extract_gradients()
 
         print("Combined Gradients DataFrame:")
         print(gradients_df)
@@ -386,10 +376,10 @@ class Orchestrator:
 
         # Initialize the Orchestrator
         print("clustering")
-        model_names = gradients_df['model_name']
-        gradients_df = gradients_df.drop('model_name', axis=1)
-
-        orchestrator = Orchestrator(max_clusters=len(model_names)-1, distance_metric=distance_metric)
+        orchestrator = Orchestrator(max_clusters=3,distance_metric=distance_metric)
+        model_names=gradients_df['model_name']
+        gradients_df=gradients_df.drop('model_name', axis=1)
+  
         # Find the optimal clusters
         orchestrator.find_optimal_clusters(gradients_df.values)
         # Get cluster information
@@ -398,37 +388,155 @@ class Orchestrator:
         print("Centroids of the optimal clustering:\n", centroids)
 
         # Get the mapping between cluster IDs and client IDs
-        cluster_mapping = orchestrator.get_cluster_mapping(model_names)
+        cluster_mapping = orchestrator.get_cluster_mapping(labels)
         print("Cluster to Client Mapping:", cluster_mapping)
 
         # Export the mapping to a JSON file
         orchestrator.export_cluster_mapping_to_json(cluster_mapping, filename="cluster_mapping.json")
 
-        return cluster_mapping
 
 
-# Step 1: Load the data
-# Define the number of partitions (clients) and partitioning strategy
-num_partitions = 5  # For example, 5 clients
-partitioner = "iid"  # or other partitioning strategies like 'non-iid'
+trains,tests=load_data(10, DirichletPartitioner(num_partitions=10, partition_by="label",alpha=0.5, min_partition_size=10,self_balancing=True))
+orchestrator = Orchestrator(max_clusters=9,distance_metric=DistanceMetric.EUCLIDEAN)
+#rchestrator.main_data(trains)
+orchestrator = Orchestrator(max_clusters=3,distance_metric=DistanceMetric.EUCLIDEAN)
+#orchestrator.main_gradiants()
+main_gradiants()
+"""Client_list=list()
+client_idx=list()
+stats=pd.DataFrame()
+for idx,train in enumerate(trains):
+    print(idx)
+    client=Client(idx)
+    Client_list.append(client)
+    for batch in train:
+        for batch_one in batch['img']:
+           client.add_array(batch_one.numpy().flatten())
 
-# Load the data using the load_data function
-trainloaders, testloaders = load_data(10, DirichletPartitioner(num_partitions=10, partition_by="label",alpha=0.5, min_partition_size=10,self_balancing=True))
+for client in Client_list:
+    print(client)
+    data = client.to_dataframe() 
+    df_stats = DataFrameStatistics(data)
+    all_stats=DataFrameStatistics(data).all_statistics()
+    single_row_df=df_stats.create_feature_stat_df(all_stats)
+    client_idx.append(client.client_id)
+    stats=pd.concat([stats, single_row_df])
+
+print(stats)
+print(client_idx)
+stats=(stats.notnull()).astype('int')
+# Optionally standardize the data
+scaler = StandardScaler()
+data_scaled = scaler.fit_transform(stats)
 
 
-# Step 2: Initialize the Orchestrator
-orchestrator = Orchestrator(distance_metric=DistanceMetric.EUCLIDEAN, max_clusters=10)
+# Initialize the Orchestrator
+print("clustering")
+orchestrator = Orchestrator(max_clusters=9,distance_metric=DistanceMetric.EUCLIDEAN)
+# Find the optimal clusters
+orchestrator.find_optimal_clusters(data_scaled)
+# Get cluster information
+labels, centroids = orchestrator.get_cluster_info()
+print("Labels of the optimal clustering:", labels)
+print("Centroids of the optimal clustering:\n", centroids)
 
-# Step 3: Call main_data to cluster the data
-cluster_mapping_data = orchestrator.main_data(trains=trainloaders, distance_metric=DistanceMetric.EUCLIDEAN)
+# Get the mapping between cluster IDs and client IDs
+cluster_mapping = orchestrator.get_cluster_mapping(client_idx)
+print("Cluster to Client Mapping:", cluster_mapping)
 
-# Print the cluster mapping for the data
-print("Cluster Mapping for Data:")
-print(cluster_mapping_data)
+# Export the mapping to a JSON file
+orchestrator.export_cluster_mapping_to_json(cluster_mapping, filename="cluster_mapping.json")
 
-# Step 4: Call main_gradients to cluster the gradients
-cluster_mapping_gradients = orchestrator.main_gradients(distance_metric=DistanceMetric.EUCLIDEAN)
 
-# Print the cluster mapping for the gradients
-print("Cluster Mapping for Gradients:")
-print(cluster_mapping_gradients)
+
+
+files=glob.glob("data/data/mnist/10_partitions/*.csv")
+files_idx=list()
+stats=pd.DataFrame()
+
+for file in files:
+    print(file)
+    data = flatten_image_dataframe(pd.read_csv(file)) 
+    data=data.drop(columns=['label'])
+    df_stats = DataFrameStatistics(data)
+    all_stats=DataFrameStatistics(data).all_statistics()
+    single_row_df=df_stats.create_feature_stat_df(all_stats)
+    files_idx.append(file.split('/')[-1].split('.')[0])
+    stats=pd.concat([stats, single_row_df])
+
+print(stats)
+print(files_idx)
+
+# Optionally standardize the data
+scaler = StandardScaler()
+data_scaled = scaler.fit_transform(stats)
+
+
+# Initialize the Orchestrator
+print("clustering")
+orchestrator = Orchestrator(max_clusters=9,distance_metric=DistanceMetric.EUCLIDEAN)
+# Find the optimal clusters
+orchestrator.find_optimal_clusters(data_scaled)
+# Get cluster information
+labels, centroids = orchestrator.get_cluster_info()
+print("Labels of the optimal clustering:", labels)
+print("Centroids of the optimal clustering:\n", centroids)
+
+# Get the mapping between cluster IDs and client IDs
+cluster_mapping = orchestrator.get_cluster_mapping(files)
+print("Cluster to Client Mapping:", cluster_mapping)
+
+# Export the mapping to a JSON file
+orchestrator.export_cluster_mapping_to_json(cluster_mapping, filename="cluster_mapping.json")"""
+
+
+"""
+# Example usage
+if __name__ == "__main__":
+    # Define the model architecture parameters
+    model_params = {
+        'input_size': 10,
+        'hidden_size': 5,
+        'output_size': 2
+    }
+
+    # Number of models to create
+    num_models = 5
+
+    # Create GradientExtractor instance
+    extractor = GradientExtractor(SimpleModel, model_params, num_models)
+
+    # Extract gradients from all models
+    gradients_df = extractor.extract_gradients()
+
+    print("Combined Gradients DataFrame:")
+    print(gradients_df)
+
+    # Optional: Compute some statistics on the gradients
+    print("\nGradient Statistics:")
+    for name in extractor.model_names:
+        model_gradients = gradients_df[gradients_df['model_name'] == name].drop('model_name', axis=1)
+        print(f"\n{name}:")
+        print(f"Mean gradient: {model_gradients.mean().mean():.6f}")
+        print(f"Max gradient: {model_gradients.max().max():.6f}")
+        print(f"Min gradient: {model_gradients.min().min():.6f}")
+
+        
+    # Initialize the Orchestrator
+    print("clustering")
+    orchestrator = Orchestrator(max_clusters=3,distance_metric=DistanceMetric.EUCLIDEAN)
+    model_names=gradients_df['model_name']
+    gradients_df=gradients_df.drop('model_name', axis=1)
+    # Find the optimal clusters
+    orchestrator.find_optimal_clusters(gradients_df)
+    # Get cluster information
+    labels, centroids = orchestrator.get_cluster_info()
+    print("Labels of the optimal clustering:", labels)
+    print("Centroids of the optimal clustering:\n", centroids)
+
+    # Get the mapping between cluster IDs and client IDs
+    cluster_mapping = orchestrator.get_cluster_mapping(model_names)
+    print("Cluster to Client Mapping:", cluster_mapping)
+
+    # Export the mapping to a JSON file
+    orchestrator.export_cluster_mapping_to_json(cluster_mapping, filename="cluster_mapping.json")"""
