@@ -4,7 +4,7 @@ from sklearn.metrics import silhouette_score
 from sklearn.datasets import make_blobs
 from sklearn.preprocessing import StandardScaler
 
-from clustering_project.Clustering.FLKmeans import KMeans
+from clustering_project.clustering_project.Clustering.FLKmeans import KMeans
 from clustering_project.Clustering.Distances import DistanceMetric
 from clustering_project.Statistics.stats import DataFrameStatistics
 from clustering_project.Statistics.model import GradientExtractor, SimpleModel
@@ -67,8 +67,10 @@ def load_data(num_partitions: int, partitioner):
 
     trainloaders = []
     testloaders = []
+    client_idx = []
 
     for partition_id in range(num_partitions):
+        client_idx.append(partition_id)
         partition = fds.load_partition(partition_id)
         partition = partition.rename_column("image", "img")
         # Divide data on each node: 80% train, 20% test
@@ -82,7 +84,8 @@ def load_data(num_partitions: int, partitioner):
         testloaders.append(testloader)
         trainloaders.append(trainloader)
 
-    return trainloaders, testloaders
+    return trainloaders, testloaders , client_idx
+
 
 
 class Client:
@@ -290,7 +293,7 @@ class Orchestrator:
             json.dump(json_compatible_mapping, f, indent=4)
         print(f"Cluster mapping exported to {filename}")
 
-    def main_data(self, trains, distance_metric=DistanceMetric.EUCLIDEAN):
+    def main_data(self, num_partitions=10, distance_metric=DistanceMetric.EUCLIDEAN, partition = IidPartitioner(num_partitions=10,seed=42)):
         """
         Process and cluster data from the given data loaders.
 
@@ -300,17 +303,16 @@ class Orchestrator:
 
         Returns:
         - cluster_mapping: A dictionary mapping each cluster ID to a list of client IDs.
+        DirichletPartitioner(num_partitions=10, partition_by="label", alpha=0.5,min_partition_size=10, self_balancing=True,)
         """
-        trains, testloaders = load_data(10,
-                                              DirichletPartitioner(num_partitions=10, partition_by="label", alpha=0.5,
-                                                                   min_partition_size=10, self_balancing=True))
+        trains, testloaders ,client_idx = load_data(num_partitions,partition)
 
         Client_list = list()
-        client_idx = list()
+        client_idx_final = list()
         stats = pd.DataFrame()
         for idx, train in enumerate(trains):
-            print(idx)
-            client = Client(idx)
+            print(client_idx[idx])
+            client = Client(client_idx[idx])
             Client_list.append(client)
             for batch in train:
                 for batch_one in batch['img']:
@@ -321,7 +323,7 @@ class Orchestrator:
             df_stats = DataFrameStatistics(data)
             all_stats = DataFrameStatistics(data).all_statistics()
             single_row_df = df_stats.create_feature_stat_df(all_stats)
-            client_idx.append(client.client_id)
+            client_idx_final.append(client.client_id)
             stats = pd.concat([stats, single_row_df])
         stats = (stats.notnull()).astype('int')
 
@@ -331,7 +333,7 @@ class Orchestrator:
 
         # Initialize the Orchestrator
         print("clustering")
-        orchestrator = Orchestrator(max_clusters=len(client_idx) - 1, distance_metric=distance_metric)
+        orchestrator = Orchestrator(max_clusters=len(client_idx_final) - 1, distance_metric=distance_metric)
         # Find the optimal clusters
         orchestrator.find_optimal_clusters(data_scaled)
         # Get cluster information
@@ -340,7 +342,7 @@ class Orchestrator:
         print("Centroids of the optimal clustering:\n", centroids)
 
         # Get the mapping between cluster IDs and client IDs
-        cluster_mapping = orchestrator.get_cluster_mapping(client_idx)
+        cluster_mapping = orchestrator.get_cluster_mapping(client_idx_final)
         print("Cluster to Client Mapping:", cluster_mapping)
 
         # Export the mapping to a JSON file
@@ -409,8 +411,15 @@ class Orchestrator:
         return cluster_mapping
 
 
-
 """
+# Step 2: Initialize the Orchestrator
+orchestrator = Orchestrator(distance_metric=DistanceMetric.EUCLIDEAN, max_clusters=10)
+
+# Step 3: Call main_data to cluster the data
+cluster_mapping_data = orchestrator.main_data(distance_metric=DistanceMetric.EUCLIDEAN,partition=DirichletPartitioner(num_partitions=10, partition_by="label",alpha=0.5, min_partition_size=10,self_balancing=True))
+
+
+
 # Step 1: Load the data
 # Define the number of partitions (clients) and partitioning strategy
 num_partitions = 5  # For example, 5 clients
