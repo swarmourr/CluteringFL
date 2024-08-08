@@ -1,6 +1,7 @@
 """school-project: A Flower / PyTorch app."""
 
 from collections import OrderedDict
+from logging import log, WARNING
 
 import torch
 import torch.nn as nn
@@ -48,6 +49,7 @@ def load_data(partition_id: int, num_partitions: int):
             dataset="uoft-cs/cifar10",
             partitioners={"train": partitioner},
         )
+    log(WARNING, "loading partition with ID: {}".format(partition_id))
     partition = fds.load_partition(partition_id)
     # Divide data on each node: 80% train, 20% test
     partition_train_test = partition.train_test_split(test_size=0.2, seed=42)

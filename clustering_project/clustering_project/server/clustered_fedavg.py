@@ -106,13 +106,13 @@ class ClusteredFedAvg(PFLStrategy):
 
     def configure_fit(self, server_round, parameters_dict, client_manager: ClusteredClientManager) -> List[Tuple[ClientProxy, FitIns]]:
         """Configure the next round of training."""
-        config = {}
-        if self.on_fit_config_fn is not None:
-            # Custom fit config function provided
-            config = self.on_fit_config_fn(server_round)
+
         # fit_ins = FitIns(parameters, config)
+        if server_round <= 1:
+            client_manager.wait_for(num_clients=10, timeout=8400)  # TODO read config variable
 
         config_fits = []
+        cluster_partition_ids = client_manager.get_cluster_partition_ids()
         for cluster_key in client_manager.get_cluster_keys():
             # Sample clients
             sample_size, min_num_clients = self.num_fit_clients_in_cluster(
@@ -122,8 +122,16 @@ class ClusteredFedAvg(PFLStrategy):
             clients_cluster = client_manager.sample_cluster(
                 num_clients=sample_size, min_num_clients=min_num_clients, cluster_key=cluster_key
             )
-            fit_ins = FitIns(parameters_dict[cluster_key], config)
-            config_fits += [(client, fit_ins) for client in clients_cluster]
+            for idx, partition_id in enumerate(cluster_partition_ids[cluster_key]):
+                config = {}
+                if self.on_fit_config_fn is not None:
+                    # Custom fit config function provided
+                    log(WARNING, "Custom fit config")
+                    config = self.on_fit_config_fn(partition_id=partition_id)
+                else:
+                    log(WARNING, "Custom fit config is NOne")
+                fit_ins = FitIns(parameters_dict[cluster_key], config)
+                config_fits += [(clients_cluster[idx], fit_ins)]
 
         # Return client/config pairs
         return config_fits
